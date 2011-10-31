@@ -43,7 +43,7 @@ module.exports = (robot) ->
             
             msg.send matrixStatus.join " | "
 
-  robot.response /jenkins listjobs (.*)/i, (msg) ->
+  robot.respond /jenkins listjobs (.*)/i, (msg) ->
     msg.http("#{jenkins.server}/api/json?tree=jobs[name,color,healthReport[description],lastBuild[number,building,result]]")
       .get() (err, res, body) ->
         response = JSON.parse(body)
