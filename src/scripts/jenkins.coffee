@@ -23,7 +23,7 @@ jenkins =
     server : process.env.JENKINS_SERVER,
     user : process.env.JENKINS_USER,
     password : process.env.JENKINS_PASSWORD,
-    ircMode : process.evn.JENKINS_IRCMODE || false
+    ircMode : process.env.JENKINS_IRCMODE || false
 }
 
 module.exports = (robot) ->
