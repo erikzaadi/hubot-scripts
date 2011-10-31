@@ -47,8 +47,10 @@ module.exports = (robot) ->
     msg.http("#{jenkins.server}/api/json?tree=jobs[name,color,healthReport[description],lastBuild[number,building,result]]")
       .get() (err, res, body) ->
         response = JSON.parse(body)
+        jobsStatus = []
         for job in response.jobs
           color = ircColors[job.color] || ircColors.default
           building = job.lastBuild.building ? "Currently building.." : "Last build : #{job.lastBuild.number} : #{job.lastBuild.result}"
-          msg.send "\3#{ircColors.default}Project:\3#{color} #{job.name} : #{job.heathReport.description} #{building}"
+          jobsStatus.push "\3#{ircColors.default}Project:\3#{color} #{job.name} : #{job.heathReport.description} #{building}"
+        msg.send jobsStatus.join "\n"
 
