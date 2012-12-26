@@ -1,3 +1,18 @@
+# Description:
+#   None
+#
+# Dependencies:
+#   "redis": "0.7.2"
+#
+# Configuration:
+#   REDISTOGO_URL
+#
+# Commands:
+#   None
+#
+# Author:
+#   atmos
+
 Url   = require "url"
 Redis = require "redis"
 
@@ -10,10 +25,10 @@ module.exports = (robot) ->
     client.auth info.auth.split(":")[1]
 
   client.on "error", (err) ->
-    console.log "Error #{err}"
+    robot.logger.error err
 
   client.on "connect", ->
-    console.log "Successfully connected to Redis"
+    robot.logger.debug "Successfully connected to Redis"
 
     client.get "hubot:storage", (err, reply) ->
       if err

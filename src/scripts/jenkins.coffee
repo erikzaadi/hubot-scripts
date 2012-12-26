@@ -1,103 +1,126 @@
-# Find the build status of project on Jenkins
+# Configuration:
+#   HUBOT_JENKINS_URL
+#   HUBOT_JENKINS_AUTH
 #
-# hubot jenkins jobname - Returns the build status 
+# Commands:
+#   hubot jenkins build <job> - builds the specified Jenkins job
+#   hubot jenkins build <job>, <params> - builds the specified Jenkins job with parameters as key=value&key2=value2
+#   hubot jenkins list - lists Jenkins jobs
+#   hubot jenkins describe <job> - Describes the specified Jenkins job
+
 #
-# hubot jenkins listjobs <statusFilter> - List all job status, possible to filter by failed, success, unstable
+# Author:
+#   dougcole
 
+querystring = require 'querystring'
 
+jenkinsBuild = (msg) ->
+    url = process.env.HUBOT_JENKINS_URL
+    job = querystring.escape msg.match[1]
+    params = msg.match[3]
 
-# Need to be more fault tolerant.
-# List jobs - Add filters
-# Authenticate
-# Display graph images?
-# Don't play with ircColors unless on IRC => Env Var?
-# Add conf for using ssl?
-# Cache results to redis like a boss?
+    path = if params then "#{url}/job/#{job}/buildWithParameters?#{params}" else "#{url}/job/#{job}/build"
 
-ircColors = 
-{
-    "blue" : "2,0",
-    "red" : "4,0"
-    "yellow" : "8,1"
-    "default" : "0,1"
-};
+    req = msg.http(path)
 
-jenkins =
-{
-    server : process.env.JENKINS_SERVER,
-    user : process.env.JENKINS_USER,
-    password : process.env.JENKINS_PASSWORD,
-    ircMode : process.env.JENKINS_IRCMODE || false
-}
+    if process.env.HUBOT_JENKINS_AUTH
+      auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+      req.headers Authorization: "Basic #{auth}"
 
-jobStatusFilters = 
-{
-    failed : 'red',
-    success : 'blue',
-    unstable : 'yellow'
-}
+    req.header('Content-Length', 0)
+    req.post() (err, res, body) ->
+        if err
+          msg.send "Jenkins says: #{err}"
+        else if res.statusCode == 302
+          msg.send "Build started for #{job} #{res.headers.location}"
+        else
+          msg.send "Jenkins says: #{body}"
+
+jenkinsDescribe = (msg) ->
+    url = process.env.HUBOT_JENKINS_URL
+    job = msg.match[1]
+
+    path = "#{url}/job/#{job}/api/json"
+
+    req = msg.http(path)
+
+    if process.env.HUBOT_JENKINS_AUTH
+      auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+      req.headers Authorization: "Basic #{auth}"
+
+    req.header('Content-Length', 0)
+    req.get() (err, res, body) ->
+        if err
+          msg.send "Jenkins says: #{err}"
+        else
+          response = ""
+          try
+            content = JSON.parse(body)
+            response += "JOB: #{content.displayName}\n"
+
+            if content.description
+              response += "DESCRIPTION: #{content.description}\n"
+            
+            response += "ENABLED: #{content.buildable}\n"
+            response += "STATUS: #{content.color}\n"
+            
+            tmpReport = ""
+            if content.healthReport.length > 0
+              for report in content.healthReport
+                tmpReport += "\n  #{report.description}"
+            else
+              tmpReport = " unknown"
+            response += "HEALTH: #{tmpReport}\n"
+
+            parameters = ""
+            for item in content.actions
+              if item.parameterDefinitions
+                for param in item.parameterDefinitions
+                  tmpDescription = if param.description then " - #{param.description} " else ""
+                  tmpDefault = if param.defaultParameterValue then " (default=#{param.defaultParameterValue.value})" else ""
+                  parameters += "\n  #{param.name}#{tmpDescription}#{tmpDefault}"
+
+            if parameters != ""
+              response += "PARAMETERS: #{parameters}\n"
+
+            msg.send response
+          catch error
+            msg.send error
+
+jenkinsList = (msg) ->
+    url = process.env.HUBOT_JENKINS_URL
+    job = msg.match[1]
+    req = msg.http("#{url}/api/json")
+
+    if process.env.HUBOT_JENKINS_AUTH
+      auth = new Buffer(process.env.HUBOT_JENKINS_AUTH).toString('base64')
+      req.headers Authorization: "Basic #{auth}"
+
+    req.get() (err, res, body) ->
+        response = ""
+        if err
+          msg.send "Jenkins says: #{err}"
+        else
+          try
+            content = JSON.parse(body)
+            for job in content.jobs
+              state = if job.color == "red" then "FAIL" else "PASS"
+              response += "#{state} #{job.name}\n"
+            msg.send response
+          catch error
+            msg.send error
 
 module.exports = (robot) ->
-  robot.respond /jenkins job (.*)/i, (msg) ->
-    project = escape(msg.match[1])
-    msg.http("#{jenkins.server}/job/#{project}/api/json")
-      .get() (err, res, body) ->
-        response = JSON.parse(body)
-        color = ircColors[response.color] || ircColors.default
-        msg.send "\3#{ircColors.default}Build status for #{project}: \n\3#{color}" + response.healthReport[0].description + "\3"
-        if response.activeConfigurations and response.activeConfigurations.length 
-          msg.send "\3#{ircColors.default}Matrix info :" 
-          matrixStatus = []
-          for config in response.activeConfigurations
-            matrixColor = ircColors[config.color] || ircColors.default
-            matrixStatus.push "\3#{matrixColor}#{config.name}\3"    
-            
-            msg.send matrixStatus.join " | "
+  robot.respond /jenkins build ([\w\.\-_ ]+)(, (.+))?/i, (msg) ->
+    jenkinsBuild(msg)
 
-  robot.respond /jenkins listjobs(.*)/i, (msg) ->
-    filter = escape(msg.match[1])    
-    filter = if filter.length > 0 and filter[0..2] is "%20" then filter.substring 3 else filter
-    filter = jobStatusFilters[filter] || false
-    msg.http("#{jenkins.server}/api/json?tree=jobs[name,color,healthReport[description],lastBuild[number,building,result]]")
-      .get() (err, res, body) ->
-        response = JSON.parse(body)
-        jobsStatus = []
-        for job in response.jobs
-          if (not filter or job.color is filter)
-            color = ircColors[job.color] || ircColors.default
-            building =  if job.lastBuild.building then "Currently building.." else "Last build : #{job.lastBuild.number} : #{job.lastBuild.result}"
-            jobsStatus.push "\3#{ircColors.default}Project:\3#{color} #{job.name} : #{job.healthReport[0].description} #{building}"
-        msg.send jobsStatus.join "\n"
-# Interact with your jenkins CI server, assumes you have a parameterized build
-# with the branch to build as a parameter
-#
-# You need to set the following variables:
-#   HUBOT_JENKINS_URL = "http://ci.example.com:8080"
-# 
-# The following variables are optional
-#   HUBOT_JENKINS_JOB - if not set you will have to specify job name every time
-#   HUBOT_JENKINS_BRANCH_PARAMETER_NAME - if not set is assumed to be BRANCH_SPECIFIER
-#
-# build branch master -- starts a build for branch origin/master
-# build branch master on job Foo -- starts a build for branch origin/master on job Foo
-#module.exports = (robot) ->
-#  robot.respond /build\s*(branch\s+)?(\w+\/?\w+)(\s+(on job)?\s*(\w+))?/i, (msg)->
-#
-#    url = process.env.HUBOT_JENKINS_URL
-#
-#    job = msg.match[5] || process.env.HUBOT_JENKINS_JOB
-#    job_parameter = process.env.HUBOT_JENKINS_BRANCH_PARAMETER_NAME || "BRANCH_SPECIFIER"
-#
-#    branch = msg.match[2]
-#    branch = "origin/#{branch}" unless ~branch.indexOf("/")
-#
-#    json_val = JSON.stringify {"parameter": [{"name": job_parameter, "value": branch}]}
-#    msg.http("#{url}/job/#{job}/build")
-#      .query(json: json_val)
-#      .post() (err, res, body) ->
-#        if err
-#          msg.send "Jenkins says: #{err}"
-#        else if res.statusCode == 302
-#              msg.send "Build started for #{branch}! #{res.headers.location}"
-#            else
-#              msg.send "Jenkins says: #{body}"
+  robot.respond /jenkins list/i, (msg) ->
+    jenkinsList(msg)
+
+  robot.respond /jenkins describe (.*)/i, (msg) ->
+    jenkinsDescribe(msg)
+
+  robot.jenkins = {
+    list: jenkinsList,
+    build: jenkinsBuild
+  }

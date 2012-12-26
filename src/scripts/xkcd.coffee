@@ -1,14 +1,19 @@
-# Grab XKCD comic image urls
+# Description:
+#   Grab XKCD comic image urls
 #
-# xkcd       - The latest XKCD comic
-# xkcd <num> - XKCD comic matching the supplied number
+# Dependencies:
+#   None
 #
-# Examples
+# Configuration:
+#   None
 #
-#   xkcd 149
-#   # => Sandwich - http://imgs.xkcd.com/comics/sandwich.png
-#   # => Proper User Policy apparently means Simon Says.
+# Commands:
+#   hubot xkcd - The latest XKCD comic
+#   hubot xkcd <num> - XKCD comic <num>
 #
+# Author:
+#   twe4ked
+
 module.exports = (robot) ->
   robot.respond /xkcd\s?(\d+)?/i, (msg) ->
     if msg.match[1] == undefined
